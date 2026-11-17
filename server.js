@@ -1,5 +1,5 @@
 const http=require('http'),fs=require('fs'),path=require('path'),{WebSocketServer}=require('ws');
-const PORT=process.env.PORT||3000,ROOT=path.join(__dirname,'public');
+const PORT=process.env.PORT||3000,ROOT=__dirname;
 const mime={'.html':'text/html','.js':'text/javascript','.css':'text/css','.png':'image/png','.svg':'image/svg+xml'};
 const server=http.createServer((req,res)=>{let p;try{p=decodeURIComponent(new URL(req.url,'http://localhost').pathname)}catch{return res.writeHead(400).end()};if(p==='/')p='/index.html';const file=path.resolve(ROOT,'.'+p);if(!file.startsWith(ROOT+path.sep))return res.writeHead(403).end();fs.readFile(file,(err,buf)=>{if(err)return res.writeHead(404).end('Not found');res.writeHead(200,{'Content-Type':mime[path.extname(file)]||'application/octet-stream','Cache-Control':'no-cache'});res.end(buf)})});
 const wss=new WebSocketServer({server});const rooms=new Map();let nextId=1;
