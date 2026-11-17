@@ -4,7 +4,45 @@ function teamInputs(){const box=$('teamSelect');box.innerHTML='';for(let i=0;i<3
 function renderLobby(){$('lobby').classList.remove('hidden');$('game').classList.add('hidden');$('lobbyInfo').textContent=`${state.mode==='ffa'?'3-player free-for-all':'1v1 duel'} · ${cap(state.arena)} · ${state.players.length}/${state.mode==='ffa'?3:2} joined`;$('lobbyPlayers').innerHTML=state.players.map(p=>`<div class="player">${esc(p.name)} ${p.id===state.host?'👑':''} — ${p.team.map(cap).join(' / ')} — ${p.ready?'✅ Ready':'⏳ Not ready'}</div>`).join('');const p=state.players.find(p=>p.id===me);$('ready').textContent=p?.ready?'Unready':'Ready up';$('start').style.display=state.host===me?'':'none'}function esc(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}$('ready').onclick=()=>{const p=state.players.find(p=>p.id===me);msg({type:'ready',ready:!p.ready})};$('start').onclick=()=>msg({type:'start'});$('rematch').onclick=()=>{msg({type:'rematch'});$('endOverlay').classList.add('hidden')};function showGame(){$('lobby').classList.add('hidden');$('game').classList.remove('hidden');$('arenaLabel').textContent=cap(state.arena)+' Arena';$('gameTimer').textContent=Math.floor(state.clock)+'s';if(phase==='playing')$('endOverlay').classList.add('hidden')}function showEnd(){const p=state.players.find(p=>p.id===state.winner);$('winnerText').textContent=p?`${p.name} wins! 🏆`:'Draw!';$('endOverlay').classList.remove('hidden')}
 function renderHud(){const hud=$('hud');hud.innerHTML=state.players.map(p=>{const m=mon[p.team[p.active]],hp=p.hps[p.active];return `<div class="hudCard ${p.id===me?'me':''}"><b>${esc(p.name)} ${p.id===me?'(You)':''} ${!p.alive?'💀':''}</b> · ${cap(p.team[p.active])}<div class="hpTrack"><i style="width:${100*hp/m.hp}%"></i></div><small>HP ${hp}/${m.hp} · Team: ${p.team.map((n,i)=>`${cap(n)} ${p.hps[i]}`).join(' | ')}</small><div class="ultTrack"><i style="width:${p.charge}%"></i></div><small>Ultimate ${Math.floor(p.charge)}%</small></div>`}).join('')}
 function bg(arena){const grad=ctx.createLinearGradient(0,0,1200,720);if(arena==='volcano'){grad.addColorStop(0,'#5a2928');grad.addColorStop(1,'#2e2028')}else if(arena==='ice'){grad.addColorStop(0,'#9acbdc');grad.addColorStop(1,'#4c8aa7')}else{grad.addColorStop(0,'#487b4a');grad.addColorStop(1,'#2b573c')}ctx.fillStyle=grad;ctx.fillRect(0,0,1200,720);ctx.strokeStyle=arena==='ice'?'#c7eaf055':arena==='volcano'?'#ff9c5555':'#d0edb533';ctx.lineWidth=2;for(let x=0;x<=1200;x+=80){ctx.beginPath();ctx.moveTo(x,0);ctx.lineTo(x,720);ctx.stroke()}for(let y=0;y<=720;y+=80){ctx.beginPath();ctx.moveTo(0,y);ctx.lineTo(1200,y);ctx.stroke()}ctx.strokeStyle='#ffffff55';ctx.lineWidth=7;ctx.strokeRect(10,10,1180,700);ctx.beginPath();ctx.arc(600,360,105,0,Math.PI*2);ctx.stroke()}
-function drawMon(p){const name=p.team[p.active],m=mon[name],im=sprites[name];ctx.save();ctx.translate(p.x,p.y);ctx.rotate(p.dir);ctx.fillStyle='#0005';ctx.beginPath();ctx.ellipse(0,19,26,10,0,0,Math.PI*2);ctx.fill();if(im.complete&&im.naturalWidth){ctx.drawImage(im,-36,-42,72,72)}else{ctx.fillStyle=colors[m.types[0]];ctx.strokeStyle='#1c2437';ctx.lineWidth=3;ctx.beginPath();ctx.moveTo(28,0);ctx.lineTo(-19,-22);ctx.lineTo(-12,0);ctx.lineTo(-19,22);ctx.closePath();ctx.fill();ctx.stroke();ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(6,-7,4,0,7);ctx.fill()}ctx.restore();ctx.textAlign='center';ctx.font='bold 14px system-ui';ctx.fillStyle=p.id===me?'#fff0a2':'white';ctx.fillText(p.name,p.x,p.y-52);ctx.fillStyle='#263443';ctx.fillRect(p.x-30,p.y-45,60,6);ctx.fillStyle=p.id===me?'#7df5aa':'#ff8c85';ctx.fillRect(p.x-30,p.y-45,60*p.hps[p.active]/m.hp,6);if(!p.alive){ctx.fillStyle='#111a';ctx.beginPath();ctx.arc(p.x,p.y,28,0,7);ctx.fill()}}
+// Animation engine: supports four horizontal frames in sprites/<name>.png.
+// Single-frame images get procedural idle, movement, hit, and switch animations.
+const visualHistory=new Map();
+function drawMon(p){
+ const now=performance.now()/1000,name=p.team[p.active],m=mon[name],im=sprites[name];
+ if(!m)return;
+ const prev=visualHistory.get(p.id)||{x:p.x,y:p.y,hp:p.hps[p.active],active:p.active,changed:now,hit:-10,step:0};
+ const moving=Math.hypot(p.x-prev.x,p.y-prev.y)>0.35;
+ if(p.hps[p.active]<prev.hp||(!p.alive&&prev.hp>0))prev.hit=now;
+ if(prev.active!==p.active){prev.changed=now;prev.active=p.active;prev.hit=-10}
+ prev.step+=moving?0.19:0.025;
+ const hurt=Math.max(0,1-(now-prev.hit)/0.32);
+ const arrival=Math.min(1,(now-prev.changed)/0.27);
+ const faint=!p.alive;
+ const bob=Math.sin(now*3.5+p.id)*2.4+(moving?Math.sin(prev.step*2)*3.8:0);
+ const scale=(0.3+0.7*arrival)*(faint?0.72:1);
+ ctx.save();ctx.translate(p.x,p.y);
+ ctx.fillStyle='#0005';ctx.beginPath();ctx.ellipse(0,19,26*scale,10*scale,0,0,Math.PI*2);ctx.fill();
+ ctx.rotate(p.dir);
+ ctx.translate(-hurt*7,bob-hurt*4);ctx.scale(scale,scale);
+ ctx.globalAlpha=faint?0.35:1;
+ if(im.complete&&im.naturalWidth){
+   // A 4:1 image is treated as a four-frame horizontal sprite sheet.
+   const sheet=im.naturalWidth>=im.naturalHeight*3.5;
+   if(sheet){const frame=Math.floor((moving?now*11:now*4)+p.id)%4;
+     ctx.drawImage(im,frame*im.naturalWidth/4,0,im.naturalWidth/4,im.naturalHeight,-36,-42,72,72);
+   }else{ctx.save();ctx.scale(1+(moving?Math.sin(prev.step*2)*0.055:0),1+(moving?Math.sin(prev.step*2+Math.PI)*0.045:Math.sin(now*3+p.id)*0.025));ctx.drawImage(im,-36,-42,72,72);ctx.restore()}
+ }else{
+   ctx.fillStyle=colors[m.types[0]];ctx.strokeStyle='#1c2437';ctx.lineWidth=3;
+   ctx.beginPath();ctx.moveTo(28,0);ctx.lineTo(-19,-22);ctx.lineTo(-12,0);ctx.lineTo(-19,22);ctx.closePath();ctx.fill();ctx.stroke();
+   ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(6,-7,4,0,7);ctx.fill();
+ }
+ if(hurt>0){ctx.globalAlpha=0.55*hurt;ctx.fillStyle='#fff';ctx.beginPath();ctx.arc(0,-6,31,0,Math.PI*2);ctx.fill()}
+ ctx.restore();
+ ctx.textAlign='center';ctx.font='bold 14px system-ui';ctx.fillStyle=p.id===me?'#fff0a2':'white';ctx.fillText(p.name,p.x,p.y-52);
+ ctx.fillStyle='#263443';ctx.fillRect(p.x-30,p.y-45,60,6);ctx.fillStyle=p.id===me?'#7df5aa':'#ff8c85';ctx.fillRect(p.x-30,p.y-45,60*p.hps[p.active]/m.hp,6);
+ prev.x=p.x;prev.y=p.y;prev.hp=p.hps[p.active];visualHistory.set(p.id,prev);
+}
+
 let lastFrame=performance.now();function frame(t){const dt=Math.min((t-lastFrame)/1000,.05);lastFrame=t;if(state&&(phase==='playing'||phase==='ended')){ctx.clearRect(0,0,1200,720);bg(state.arena);for(const b of state.projectiles){ctx.fillStyle=colors[b.type]||'#fff';ctx.shadowBlur=18;ctx.shadowColor=ctx.fillStyle;ctx.beginPath();ctx.arc(b.x,b.y,b.r,0,7);ctx.fill();ctx.shadowBlur=0}for(const p of state.players)drawMon(p);const p=state.players.find(p=>p.id===me);if(p&&p.alive&&phase==='playing'){const inp=input();const mag=Math.hypot(inp.x,inp.y);if(mag){p.x=Math.max(24,Math.min(1176,p.x+inp.x/Math.max(1,mag)*mon[p.team[p.active]].speed*dt));p.y=Math.max(24,Math.min(696,p.y+inp.y/Math.max(1,mag)*mon[p.team[p.active]].speed*dt))}if(Math.hypot(inp.ax,inp.ay)>.1)p.dir=Math.atan2(inp.ay,inp.ax)}}requestAnimationFrame(frame)}requestAnimationFrame(frame);
 function input(){const k=a=>keys.has(binds[a])?1:0;let x=k('right')-k('left'),y=k('down')-k('up'),ax=k('aimRight')-k('aimLeft'),ay=k('aimDown')-k('aimUp');if(!ax&&!ay){const p=state?.players.find(p=>p.id===me);ax=Math.cos(p?.dir||0);ay=Math.sin(p?.dir||0)}return {x,y,ax,ay,fire:!!k('attack'),secondary:!!k('secondary'),ult:!!k('ultimate')}}setInterval(()=>{if(phase==='playing')msg({type:'input',input:input()})},33);
 window.addEventListener('keydown',e=>{if(waitingBind){e.preventDefault();if(e.code!=='Escape'){binds[waitingBind]=e.code;localStorage.setItem('arenaKeys',JSON.stringify(binds))}waitingBind=null;renderBindings();return}if(['INPUT','SELECT','TEXTAREA'].includes(document.activeElement.tagName)||$('settings').open)return;if(Object.values(binds).includes(e.code))e.preventDefault();keys.add(e.code);if(phase==='playing')for(let i=1;i<=3;i++)if(e.code===binds['swap'+i])msg({type:'swap',index:i-1})});window.addEventListener('keyup',e=>keys.delete(e.code));window.addEventListener('blur',()=>keys.clear());$('settingsBtn').onclick=()=>{$('settings').showModal();renderBindings()};$('closeSettings').onclick=()=>$('settings').close();$('resetBindings').onclick=()=>{binds={...defaults};localStorage.setItem('arenaKeys',JSON.stringify(binds));renderBindings()};function renderBindings(){$('bindings').innerHTML='';for(const [action,key]of Object.entries(binds)){const el=document.createElement('div');el.className='binding';const label=document.createElement('span');label.textContent=action.replace(/([A-Z])/g,' $1');const btn=document.createElement('button');btn.textContent=waitingBind===action?'Press key…':key.replace('Key','').replace('Digit','').replace('Arrow','').replace('Left','');btn.onclick=()=>{waitingBind=action;renderBindings()};el.append(label,btn);$('bindings').append(el)}}
